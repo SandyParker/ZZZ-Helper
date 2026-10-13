@@ -37,12 +37,14 @@ DISC_SET_NAMES = {
     "342": "Thorned Rose",
     "327": "Branch & Blade Song",
     "310": "Woodpecker Electro",
+    "311": "Puffer Electro"
 }
 
 
 class ArmorerSelect(discord.ui.Select):
-    def __init__(self, armorers_data: dict[str, dict]):
+    def __init__(self, armorers_data: dict[str, dict], nickname: str):
         self.armorers_data = armorers_data
+        self.nickname = nickname
         options = [
             discord.SelectOption(
                 label=name,
@@ -151,13 +153,18 @@ class ArmorerSelect(discord.ui.Select):
 
         final_score = crit_rate + crit_dmg * 0.35
 
-        lines = [f"**{selected_name} - Drive Discs (Slots 1-6)**"]
+        CR_RATE_PER_ROLL = 2.4
+        CR_DMG_PER_ROLL = 4.8
+        CR_DMG_EFFECTIVE = CR_DMG_PER_ROLL * 0.35
+
+        display_name = self.nickname if self.nickname else "Unknown"
+        lines = [f"**{display_name} - {selected_name}**"]
         for group, count in sorted(disc_groups.items()):
             set_name = DISC_SET_NAMES.get(group, "Unknown")
             lines.append(f"  **{set_name} ({group})**: {count} piece(s)")
 
         engine_name = engine.get("name", f"Unknown ({engine_id})")
-        lines.append(f"\n**Engine:** {engine_name} (Lv.{upgrade_level})")
+        lines.append(f"\n**Engine:** {engine_name} (Overclock: {upgrade_level})")
         lines.append(f"**Base DEF:** {base_def:.1f}")
         lines.append(f"**Total DEF%:** {total_def_pct:.1f}%")
         lines.append(f"**Total Flat DEF:** {total_flat_def:.1f}")
@@ -172,7 +179,27 @@ class ArmorerSelect(discord.ui.Select):
         lines.append(f"**Disc CRIT DMG:** +{total_crit_dmg:.1f}%")
         lines.append(f"**Set Bonuses CRIT DMG:** +{crit_dmg - 50.0 - total_crit_dmg:.1f}%")
         lines.append(f"**Total CRIT DMG:** **{crit_dmg:.1f}%**")
-        lines.append(f"\n**Final Score (CRIT Rate + CRIT DMG × 0.35):** **{final_score:.1f}**")
+        lines.append(f"\n**Final Score - CRIT Rate + (CRIT DMG × 0.35):** **{final_score:.1f}**")
+
+        if final_score < 200:
+            needed = 200 - final_score
+            lines.append(f"\n**Rolls needed to reach 200%:** {needed:.1f}%")
+            lines.append("```")
+            lines.append(f"{'CR Rolls':>8} | {'CD Rolls':>8} | {'Total %':>8}")
+            lines.append("-" * 30)
+            found = False
+            for cr_rolls in range(0, 10):
+                for cd_rolls in range(0, 10):
+                    gained = cr_rolls * CR_RATE_PER_ROLL + cd_rolls * CR_DMG_EFFECTIVE
+                    if gained >= needed:
+                        lines.append(f"{cr_rolls:>8} | {cd_rolls:>8} | {gained:>7.1f}%")
+                        found = True
+                        break
+                if found and cr_rolls > 0:
+                    break
+            lines.append("```")
+        else:
+            lines.append(f"\n**Already above 200%!**")
 
         await interaction.response.edit_message(
             content="\n".join(lines),
@@ -181,9 +208,9 @@ class ArmorerSelect(discord.ui.Select):
 
 
 class ArmorerView(discord.ui.View):
-    def __init__(self, armorers_data: dict[str, dict]):
+    def __init__(self, armorers_data: dict[str, dict], nickname: str):
         super().__init__(timeout=60)
-        self.add_item(ArmorerSelect(armorers_data))
+        self.add_item(ArmorerSelect(armorers_data, nickname))
 
 
 class ZZZHelper(discord.Client):
@@ -213,10 +240,16 @@ class ZZZHelper(discord.Client):
             pass
         return None
 
-    def get_armorers_data(self, enka_data: dict) -> dict[str, dict]:
+    def get_armorers_data(self, enka_data: dict) -> tuple[dict[str, dict], str]:
         armorers = {}
+        nickname = ""
         try:
-            showcase = enka_data.get("PlayerInfo", {}).get("ShowcaseDetail", {})
+            player_info = enka_data.get("PlayerInfo", {})
+            social = player_info.get("SocialDetail", {})
+            profile = social.get("ProfileDetail", {})
+            nickname = profile.get("Nickname") or profile.get("Nickname", "")
+
+            showcase = player_info.get("ShowcaseDetail", {})
             avatar_list = showcase.get("AvatarList", [])
             for avatar in avatar_list:
                 agent_id = str(avatar.get("Id", ""))
@@ -225,7 +258,7 @@ class ZZZHelper(discord.Client):
                     armorers[name] = avatar
         except Exception:
             pass
-        return armorers
+        return armorers, nickname
 
 
 bot = ZZZHelper()
@@ -248,16 +281,17 @@ async def armorercr(interaction: discord.Interaction, uid: str):
         )
         return
 
-    armorers_data = bot.get_armorers_data(enka_data)
+    armorers_data, nickname = bot.get_armorers_data(enka_data)
     if not armorers_data:
         await interaction.followup.send(f"No Armorer characters found for UID `{uid}`.")
         return
 
-    view = ArmorerView(armorers_data)
+    view = ArmorerView(armorers_data, nickname)
 
+    display_name = nickname if nickname else "Unknown"
     content = (
         f"**Armorer Crit Rate Calculator**\n"
-        f"UID: `{uid}`\n"
+        f"UID: `{uid}` | User: **{display_name}**\n"
         f"Found: {', '.join(armorers_data.keys())}\n"
         f"Select a character to view their Drive Discs:"
     )
