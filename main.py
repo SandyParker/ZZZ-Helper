@@ -310,5 +310,4 @@ async def armorercr(interaction: discord.Interaction, uid: str):
 
 if not TOKEN:
     raise RuntimeError("Missing DISCORD_BOT_TOKEN in .env")
-print("Token: " + TOKEN)
 bot.run(TOKEN)
