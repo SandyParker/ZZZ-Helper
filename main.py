@@ -10,14 +10,17 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 ARMORER_CHARACTERS = {
-    "Claret": {"desc": "Electric Armorer Agent", "passive": 30.0, "base_def": 441}
+    "Claret": {"desc": "Electric Armorer Agent", "passive": 30.0, "base_def": 441},
+    "Sunbringer": {"desc": "Genesis Flare Armorer Agent", "passive": 40.0, "base_def": 441}
 }
 
 AGENT_ID_TO_NAME = {
     "1611": "Claret",
+    "1601": "Sunbringer"
 }
 
 ENGINES = {
+    14160: {"name": "Dragonfire Mirage", "base_def": 446, "def_pct": 48, "crit_rate": 20, "crit_rate_per_upgrade": 2},
     14161: {"name": "Crimson Thirst", "base_def": 431, "def_pct": 48, "crit_rate": 25, "crit_rate_per_upgrade": 2.5},
     13022: {"name": "Candlelight Conspiracy", "base_def": 356, "def_pct": 40, "crit_rate": 8, "crit_rate_per_upgrade": 2.3},
     13021: {"name": "Bloodmarrow Coffer", "base_def": 356, "def_pct": 0, "crit_rate": 20, "crit_rate_per_upgrade": 0},
@@ -37,7 +40,8 @@ DISC_SET_NAMES = {
     "342": "Thorned Rose",
     "327": "Branch & Blade Song",
     "310": "Woodpecker Electro",
-    "311": "Puffer Electro"
+    "311": "Puffer Electro",
+    "343": "Monument of the Star"
 }
 
 
@@ -48,7 +52,7 @@ class ArmorerSelect(discord.ui.Select):
         options = [
             discord.SelectOption(
                 label=name,
-                description=data.get("desc", "Armorer Agent"),
+                description= ARMORER_CHARACTERS[name]["desc"],
                 default=False
             )
             for name, data in armorers_data.items()
@@ -122,11 +126,15 @@ class ArmorerSelect(discord.ui.Select):
                     elif stat == "crit_dmg":
                         total_crit_dmg += value
 
-        set_342 = disc_groups.get("342", 0) + disc_groups.get("343", 0)
+        set_342 = disc_groups.get("342", 0)
         set_327 = disc_groups.get("327", 0)
         set_310 = disc_groups.get("310", 0)
+        set_343 = disc_groups.get("343", 0)
 
         if set_342 >= 2:
+            total_def_pct += 16
+
+        if set_343 >= 2:
             total_def_pct += 16
 
         base_def = char_base_def + engine_base_def
@@ -139,7 +147,9 @@ class ArmorerSelect(discord.ui.Select):
         passive_crit = ARMORER_CHARACTERS.get(selected_name, {}).get("passive", 0)
         crit_rate += passive_crit + engine_crit_rate + engine_crit_rate_upgrade + total_crit_rate
 
-        if set_342 >= 4:
+        if set_343 >= 4:
+            crit_rate += 12
+        elif set_342 >= 4:
             if final_def >= 1800:
                 crit_rate += 16
             elif final_def >= 1000:
@@ -240,7 +250,7 @@ class ZZZHelper(discord.Client):
             pass
         return None
 
-    def get_armorers_data(self, enka_data: dict) -> tuple[dict[str, dict], str]:
+    def get_armorers_data(self, enka_data: dict) -> list[dict[str, dict], str]:
         armorers = {}
         nickname = ""
         try:
